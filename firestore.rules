@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Product catalog: any signed-in user can read, only admins can change it.
+    match /item/{itemId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // User profiles. Roles can only be granted from the Firebase console.
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.role == 'user'
+        && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'createdAt']);
+      allow update, delete: if false;
+
+      // Purchase history belongs to its owner.
+      match /history/{orderId} {
+        allow read, create: if signedIn() && request.auth.uid == uid;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
